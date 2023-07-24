@@ -1,0 +1,30 @@
+{
+    "no_recursion": [
+        "Alacritty"
+    ],
+    "no_wakeup": [
+        "mpv"
+    ],
+    "seconds_sleep": 90,
+    "seconds_wakeup": 5,
+    "window_change": {
+        "close": true,
+        "floating": false,
+        "focus": true,
+        "fullscreen_mode": false,
+        "mark": false,
+        "move": true,
+        "new": true,
+        "title": false,
+        "urgent": false
+    },
+    "workspace_change": {
+        "empty": true,
+        "focus": true,
+        "init": true,
+        "move": true,
+        "reload": false,
+        "rename": false,
+        "urgent": false
+    }
+}

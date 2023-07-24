@@ -1,16 +1,17 @@
-#!/usr/bin/python3
+#!/usr/bin/python
+
 import asyncio
 from asyncio import Task
 from signal import SIGINT, SIGTERM, SIGUSR1
 
+from core import get_ipcs
 from event_handler import event_handler
 from misc import set_appstate
-from swayipc import get_ipcs
-from tasks import periodically_pause, update_for_battery_status
+from tasks import periodically_pause, signal_invisible, update_for_battery_status
 
 
 async def main(appstate: dict) -> None:
-    subscriptions: dict[str, dict[str, str]] = appstate["subscriptions"]
+    subscriptions: dict[str, dict[str, bool]] = appstate["subscriptions"]
     subscription_types = [
         sub
         for sub, subdict in subscriptions.items()
@@ -18,19 +19,19 @@ async def main(appstate: dict) -> None:
     ]
 
     async with get_ipcs() as connection:
-        task = asyncio.create_task(event_handler(appstate, connection))
+        appstate["connection"] = connection
+        task = asyncio.create_task(event_handler(appstate))
         await connection.subscribe(subscription_types)
-
         while True:
             try:
                 event, subevent = await connection.listen()
-                if not subscriptions[event][subevent]:
-                    continue
-                task.cancel()
-                task = asyncio.create_task(event_handler(appstate, connection))
+                if subscriptions[event][subevent]:
+                    task.cancel()
+                    task = asyncio.create_task(event_handler(appstate))
 
             except asyncio.CancelledError:
                 print("shutting down from main")
+                await signal_invisible(appstate, respect_hibernate=False, sleep=False)
                 return
 
 
@@ -45,8 +46,8 @@ if __name__ == "__main__":
     main_task: Task = loop.create_task(main(appstate))
 
     def shutdown():
-        main_task.cancel()
         pause_task.cancel()
+        main_task.cancel()
         loop.stop()
 
     for s in [SIGINT, SIGTERM]:
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        loop.run_until_complete(main_task)  # Give the tasks a chance to cleanup
         loop.run_until_complete(pause_task)
+        loop.run_until_complete(main_task)  # Give the tasks a chance to cleanup
         print("Shutdown completed...")
         loop.close()

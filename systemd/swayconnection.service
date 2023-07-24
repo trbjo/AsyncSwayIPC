@@ -1,0 +1,13 @@
+[Unit]
+BindsTo=sway-session.target
+
+[Service]
+Type=simple
+Restart=always
+Environment=PYTHONUNBUFFERED=1
+TimeoutStopSec=2
+WorkingDirectory=/home/tb/code/sway-ipc
+ExecStart=/home/tb/code/sway-ipc/swayconnection
+
+[Install]
+WantedBy=sway-session.target

@@ -2,6 +2,7 @@ import glob
 import json
 import subprocess
 from enum import IntEnum
+from signal import SIGCONT, SIGSTOP
 
 import psutil
 
@@ -12,20 +13,43 @@ class PowerStatus(IntEnum):
     ON_BATTERY = 19
 
 
-async def send_signal(sign: int, pid: int, app_id: str = "", recurse: bool = True):
-    if app_id == "PopUp":
-        return
+async def signal_handler(
+    appstate: dict,
+    pid: int,
+    app_id: str,
+    sign: PowerStatus | int,
+):
+    """
+    Handles starting and stopping of apps. this is the only method allowed to mutate the
+    stopped_apps dict
+    """
+    stopped_apps: dict[int, str] = appstate["stopped_apps"]
+    if sign == SIGCONT:
+        try:
+            del stopped_apps[pid]
+        except KeyError:
+            return
+    elif sign == SIGSTOP:
+        if pid in stopped_apps:
+            return
+        stopped_apps[pid] = app_id
+    else:
+        raise ValueError(f"Wrong input argument: {sign}")
+
+    recurse = app_id not in appstate["no_recursion"]
+
     parent = psutil.Process(pid)
 
     try:
         parent.send_signal(sign)
     except (psutil.AccessDenied, psutil.NoSuchProcess):
         pass
+
     for child in parent.children(recursive=recurse):
         try:
             child.send_signal(sign)
         except (psutil.AccessDenied, psutil.NoSuchProcess):
-            pass
+            continue
 
 
 async def get_power_status() -> PowerStatus:
@@ -66,13 +90,14 @@ async def set_appstate() -> dict:
         settings = json.load(f)
 
     appstate = {}
-    appstate["no_wakeup"] = set(settings["no_wakeup"])
+    appstate["stopped_apps"] = {}
+
+    appstate["hibernate"] = set(settings["hibernate"])
     appstate["no_recursion"] = set(settings["no_recursion"])
     appstate["subscriptions"] = {
         "window": settings["window_change"],
         "workspace": settings["workspace_change"],
     }
-    appstate["stopped_apps"] = []  # pid, app_id
 
     appstate["seconds_wakeup"] = settings["seconds_wakeup"]
     appstate["seconds_sleep"] = settings["seconds_sleep"]

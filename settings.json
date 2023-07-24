@@ -2,7 +2,7 @@
     "no_recursion": [
         "Alacritty"
     ],
-    "no_wakeup": [
+    "hibernate": [
         "mpv"
     ],
     "seconds_sleep": 90,
@@ -20,7 +20,7 @@
     },
     "workspace_change": {
         "empty": true,
-        "focus": true,
+        "focus": false,
         "init": true,
         "move": true,
         "reload": false,

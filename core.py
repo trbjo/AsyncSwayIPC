@@ -8,8 +8,6 @@ from typing import AsyncIterator
 
 import orjson
 
-socket = os.environ["SWAYSOCK"]
-
 magic_string = "i3-ipc"
 magic_string_len = len(magic_string)
 payload_length_length = 4
@@ -54,13 +52,15 @@ def parse_header(header):
 
 class SwayIPCSocket:
     def __init__(self):
+        self.socket = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])
+        if not self.socket:
+            raise EnvironmentError(f"Could not find the socket")
+
         self.reader: asyncio.StreamReader = None  # pyright: ignore
         self.writer: asyncio.StreamWriter = None  # pyright: ignore
 
     async def connect(self):
-        result = await asyncio.open_unix_connection(path=socket)
-        self.reader = result[0]
-        self.writer = result[1]
+        self.reader, self.writer = await asyncio.open_unix_connection(path=self.socket)
 
     async def send(self, message_type, command=""):
         payload_length = len(command)
@@ -127,7 +127,7 @@ class SwayIPCConnection:
         _, response = await self._event_socket.receive_event()
         status = response["success"]
         if not status:
-            print(f"Could subscribe with {events}", file=sys.stderr)
+            raise ConnectionError(f"Could subscribe with {events}, reply: {response}")
         return status
 
     async def run_command(self, command: str):

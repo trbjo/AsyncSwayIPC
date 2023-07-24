@@ -1,58 +1,54 @@
 import asyncio
 from signal import SIGCONT, SIGSTOP
 
+from event_handler import app_overview
 from misc import (
     PowerStatus,
     get_power_status,
-    send_signal,
     set_systemd_target_from_powerstatus,
+    signal_handler,
 )
 
 
 async def update_for_battery_status(appstate):
+    print("Got SIGUSR signal")
     power_status = appstate["power_status"] = await get_power_status()
+    sleep = power_status == PowerStatus.ON_BATTERY
     await set_systemd_target_from_powerstatus(appstate)
-    apps = list(appstate["stopped_apps"])
-    no_wakeup = appstate["no_wakeup"]
-    no_recursion = appstate["no_recursion"]
-    for pid, app_id in apps:
-        if app_id not in no_wakeup:
-            recurse = app_id in no_recursion
-            await send_signal(power_status, pid, app_id, recurse)
+    await signal_invisible(appstate, respect_hibernate=False, sleep=sleep)
+
+
+async def signal_invisible(
+    appstate: dict, respect_hibernate: bool, sleep: bool
+) -> None:
+    while not (connection := appstate.get("connection")):
+        await asyncio.sleep(1)
+    hibernate = appstate["hibernate"]
+    app_dict = await app_overview(connection)
+    for pid, app_id, visible, _ in app_dict.values():
+        if visible:  # don't disturb visible apps
+            continue
+        if respect_hibernate and app_id in hibernate:
+            continue
+        await signal_handler(appstate, pid, app_id, SIGSTOP if sleep else SIGCONT)
 
 
 async def periodically_pause(appstate):
-    sleep = False
-    long_interval = appstate["seconds_sleep"]
-    short_interval = appstate["seconds_wakeup"]
-    power_status = appstate["power_status"]
-    no_wakeup = appstate["no_wakeup"]
-
     try:
+        long_interval = appstate["seconds_sleep"]
+        short_interval = appstate["seconds_wakeup"]
+        power_status = appstate["power_status"]
+        sleep = False
+
         while True:
-            sleep = not sleep
+            if power_status == PowerStatus.ON_BATTERY:
+                await signal_invisible(appstate, respect_hibernate=True, sleep=sleep)
+
             for _ in range(long_interval if sleep else short_interval):
-                if power_status != appstate["power_status"]:
-                    break
                 await asyncio.sleep(1)
 
-            power_status = appstate["power_status"]
-
-            if power_status == PowerStatus.ON_BATTERY and sleep:
-                my_sign = SIGSTOP
-            else:
-                my_sign = SIGCONT
-
-            apps = list(appstate["stopped_apps"])
-            no_recursion = appstate["no_recursion"]
-            for pid, app_id in apps:
-                if app_id not in no_wakeup:
-                    recurse = app_id in no_recursion
-                    await send_signal(my_sign, pid, app_id, recurse)
+            sleep = not sleep
 
     except asyncio.CancelledError:
-        apps = list(appstate["stopped_apps"])
-        print(f"starting {' '.join(app[1] for app in apps)}")
-        for pid, app_id in apps:
-            await send_signal(SIGCONT, pid, app_id)
         print("shutting down from periodically_pause")
+        return

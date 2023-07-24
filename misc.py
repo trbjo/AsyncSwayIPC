@@ -53,11 +53,9 @@ async def signal_handler(
 
 
 async def get_power_status() -> PowerStatus:
-    ac_adapter = None
-    for f in glob.glob("/sys/class/power_supply/AC*", recursive=False):
-        ac_adapter = f
-        break
-    else:
+    try:
+        ac_adapter = next(f for f in glob.glob("/sys/class/power_supply/AC*"))
+    except StopIteration:
         return PowerStatus.NOT_A_LAPTOP
 
     with open(f"{ac_adapter}/online", mode="rb") as fd:

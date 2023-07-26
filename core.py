@@ -52,7 +52,7 @@ class SwayIPCSocket:
     def __init__(self):
         self.socket = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])
         if not self.socket:
-            raise EnvironmentError(f"Could not find the socket")
+            raise EnvironmentError("Could not find the socket")
 
         self.reader: asyncio.StreamReader = None  # pyright: ignore
         self.writer: asyncio.StreamWriter = None  # pyright: ignore

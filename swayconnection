@@ -1,16 +1,34 @@
 #!/usr/bin/python
 
 import asyncio
-from asyncio import Task
+import json
 from signal import SIGINT, SIGTERM, SIGUSR1
 
-from core import get_ipcs
-from event_handler import event_handler
-from misc import set_appstate
-from tasks import periodically_pause, signal_invisible, update_for_battery_status
+from core import SwayIPCConnection
+from handlers import window_handler
+from helpers import fullscreen_enable, signal_invisible
+from power import update_battery_status
 
 
-async def main(appstate: dict) -> None:
+async def timer(appstate):
+    sleep_interval = appstate["sleep_interval"]
+    wakeup_interval = appstate["wakeup_interval"]
+    sleep = True
+
+    try:
+        while True:
+            if appstate.get("on_battery") is True:
+                await signal_invisible(appstate, sleep=sleep)
+
+            await asyncio.sleep(sleep_interval if sleep else wakeup_interval)
+            sleep = not sleep
+
+    except asyncio.CancelledError:
+        print("shutting down from timer")
+        return
+
+
+async def event_listener(appstate: dict) -> None:
     subscriptions: dict[str, dict[str, bool]] = appstate["subscriptions"]
     subscription_types = [
         sub
@@ -18,47 +36,62 @@ async def main(appstate: dict) -> None:
         if any(k for k in subdict.values())
     ]
 
-    async with get_ipcs() as connection:
-        appstate["connection"] = connection
-        task = asyncio.create_task(event_handler(appstate))
-        await connection.subscribe(subscription_types)
-        while True:
-            try:
-                event, subevent = await connection.listen()
-                if subscriptions[event][subevent]:
-                    task.cancel()
-                    task = asyncio.create_task(event_handler(appstate))
+    ipc = appstate["ipc"]
+    task = asyncio.create_task(update_battery_status(appstate))
 
-            except asyncio.CancelledError:
-                print("shutting down from main")
-                await signal_invisible(appstate, respect_hibernate=False, sleep=False)
-                return
+    await ipc.subscribe(subscription_types)
+
+    while True:
+        try:
+            event, subevent = await ipc.listen()
+            if subscriptions[event][subevent]:
+                if event == "output":
+                    # todo: implement output handler
+                    continue
+
+                await fullscreen_enable(ipc, subevent)
+
+                if not appstate["on_battery"]:
+                    continue
+
+                task.cancel()
+                task = asyncio.create_task(window_handler(ipc))
+
+        except asyncio.CancelledError:
+            print("shutting down from events")
+            return
+
+
+async def main(appstate: dict):
+    ipc = SwayIPCConnection()
+    await ipc.connect()
+    appstate["ipc"] = ipc
+
+    loop.add_signal_handler(
+        SIGUSR1, lambda: loop.create_task(update_battery_status(appstate))
+    )
+
+    for s in [SIGINT, SIGTERM]:
+        loop.add_signal_handler(
+            s, lambda: [task.cancel() for task in asyncio.all_tasks()]
+        )
+
+    try:
+        tasks = [timer(appstate), event_listener(appstate)]
+        await asyncio.gather(*tasks)
+    except asyncio.exceptions.CancelledError:
+        await signal_invisible(appstate, sleep=False, all_apps=True)
+    finally:
+        await ipc.close()
 
 
 if __name__ == "__main__":
+    with open("settings.json", "r") as f:
+        appstate = json.load(f)
+
     loop = asyncio.get_event_loop()
-    appstate = asyncio.run(set_appstate())
-    loop.add_signal_handler(
-        SIGUSR1, lambda: asyncio.create_task(update_for_battery_status(appstate))
-    )
-
-    pause_task: Task = loop.create_task(periodically_pause(appstate))
-    main_task: Task = loop.create_task(main(appstate))
-
-    def shutdown():
-        pause_task.cancel()
-        main_task.cancel()
-        loop.stop()
-
-    for s in [SIGINT, SIGTERM]:
-        loop.add_signal_handler(s, shutdown)
-
     try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
+        loop.run_until_complete(main(appstate))
     finally:
-        loop.run_until_complete(pause_task)
-        loop.run_until_complete(main_task)  # Give the tasks a chance to cleanup
-        print("Shutdown completed...")
+        print("Shutdown complete.")
         loop.close()

@@ -1,30 +1,32 @@
 {
-    "no_recursion": [
-        "Alacritty"
-    ],
-    "hibernate": [
+    "no_wakeup": [
         "mpv"
     ],
-    "seconds_sleep": 90,
-    "seconds_wakeup": 5,
-    "window_change": {
-        "close": true,
-        "floating": false,
-        "focus": true,
-        "fullscreen_mode": false,
-        "mark": false,
-        "move": true,
-        "new": true,
-        "title": false,
-        "urgent": false
-    },
-    "workspace_change": {
-        "empty": true,
-        "focus": false,
-        "init": true,
-        "move": true,
-        "reload": false,
-        "rename": false,
-        "urgent": false
+    "wakeup_interval": 2,
+    "sleep_interval": 38,
+    "subscriptions": {
+        "window": {
+            "close": "window_handler",
+            "floating": false,
+            "focus": "window_handler",
+            "fullscreen_mode": "window_handler",
+            "mark": false,
+            "move": "window_handler",
+            "new": "window_handler",
+            "title": false,
+            "urgent": false
+        },
+        "workspace": {
+            "empty": false,
+            "focus": "window_handler",
+            "init": "window_handler",
+            "move": false,
+            "reload": false,
+            "rename": false,
+            "urgent": false
+        },
+        "output": {
+            "unspecified": "output_handler"
+        }
     }
 }

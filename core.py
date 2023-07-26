@@ -1,10 +1,8 @@
 import asyncio
-import contextlib
 import errno
 import json
 import os
 import sys
-from typing import AsyncIterator
 
 import orjson
 
@@ -62,6 +60,13 @@ class SwayIPCSocket:
     async def connect(self):
         self.reader, self.writer = await asyncio.open_unix_connection(path=self.socket)
 
+    async def reconnect(self, source: str):
+        print(f"Socket error due to {source}, trying to reconnect… ", end="")
+        await self.close()
+        await asyncio.sleep(1)  # Use asyncio.sleep for async sleep
+        await self.connect()
+        print("reacquired socket!")
+
     async def send(self, message_type, command=""):
         payload_length = len(command)
         payload_type = message_types[message_type.upper()]
@@ -74,7 +79,7 @@ class SwayIPCSocket:
         self.writer.write(data)
         await self.writer.drain()
 
-    async def receive_event(self) -> tuple[str, dict]:
+    async def receive_event(self) -> tuple[str, dict | list]:
         header = await self.reader.read(
             magic_string_len + payload_length_length + payload_type_length
         )
@@ -83,8 +88,13 @@ class SwayIPCSocket:
             magic_string_len : magic_string_len + payload_length_length
         ]
         payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
-        response = await self.reader.read(payload_length)
-        return event, orjson.loads(response)
+        try:
+            raw_response = await self.reader.read(payload_length)
+            resp_decoded = orjson.loads(raw_response)
+            return event, resp_decoded
+        except orjson.JSONDecodeError as e:
+            await self.reconnect("JSONDecodeError")
+            return "error", {"success": False, "parse_error": False, "error": e}
 
     async def close(self):
         if self.writer and not self.writer.is_closing():
@@ -98,68 +108,74 @@ class SwayIPCSocket:
                 _, response = await self.receive_event()
                 return response
             except (OSError, ConnectionError):
-                print("Socket error occurred, trying to reconnect...")
-                await self.close()
-                await asyncio.sleep(1)  # Use asyncio.sleep for async sleep
-                await self.connect()
+                await self.reconnect(
+                    f"send_receive, msg type: {message_type} {command}"
+                )
 
 
 class SwayIPCConnection:
-    def __init__(self) -> None:
-        self.RECONNECT_DELAY = 1
-        self._command_socket = SwayIPCSocket()
+    def __init__(self, num_command_sockets=5, reconnect_delay=1) -> None:
+        self.reconnect_delay = reconnect_delay
+        self._command_sockets = [SwayIPCSocket() for _ in range(num_command_sockets)]
+        self._command_socket_queue = asyncio.Queue()
+
+        for socket in self._command_sockets:
+            self._command_socket_queue.put_nowait(socket)
+
         self._event_socket = SwayIPCSocket()
 
     async def connect(self) -> None:
         while True:
             try:
-                await self._command_socket.connect()
+                for socket in self._command_sockets:
+                    await socket.connect()
                 await self._event_socket.connect()
                 break
             except (OSError, ConnectionError) as e:
                 if e.errno != errno.ECONNREFUSED:
                     raise
-                print("Connection lost, trying to reconnect...")
-                await asyncio.sleep(self.RECONNECT_DELAY)
+                print("Connection lost, trying to reconnect…")
+                await asyncio.sleep(self.reconnect_delay)
 
     async def subscribe(self, events: list[str]) -> bool:
         await self._event_socket.send("SUBSCRIBE", json.dumps(events))
         _, response = await self._event_socket.receive_event()
-        status = response["success"]
+        status = response["success"]  # pyright: ignore
         if not status:
             raise ConnectionError(f"Could subscribe with {events}, reply: {response}")
         return status
 
+    async def send_receive_wrapper(self, message: str, command: str = ""):
+        socket = await self._command_socket_queue.get()
+        try:
+            result = await socket.send_receive(message, command)
+        finally:
+            # Return the command socket to the pool
+            self._command_socket_queue.put_nowait(socket)
+        return result
+
     async def run_command(self, command: str):
-        return await self._command_socket.send_receive("RUN_COMMAND", command)
+        return await self.send_receive_wrapper("RUN_COMMAND", command)
 
     async def get_workspaces(self):
-        return await self._command_socket.send_receive("GET_WORKSPACES")
+        return await self.send_receive_wrapper("GET_WORKSPACES")
 
     async def get_tree(self):
-        return await self._command_socket.send_receive("GET_TREE")
+        return await self.send_receive_wrapper("GET_TREE")
 
-    async def close(self) -> None:
-        await self._command_socket.close()
-        await self._event_socket.close()
+    async def get_outputs(self):
+        return await self.send_receive_wrapper("GET_OUTPUTS")
 
     async def listen(self) -> tuple[str, str]:
         while True:
             try:
                 event, response = await self._event_socket.receive_event()
-                subevent = response["change"]
+                subevent = response["change"]  # pyright: ignore
                 return event, subevent
-            except (OSError, ConnectionError) as e:
-                await self._event_socket.close()
-                await asyncio.sleep(1)  # Use asyncio.sleep for async sleep
-                await self._event_socket.connect()
+            except (OSError, ConnectionError):
+                await self._event_socket.reconnect("eventlistener")
 
-
-@contextlib.asynccontextmanager
-async def get_ipcs() -> AsyncIterator[SwayIPCConnection]:
-    connection = SwayIPCConnection()
-    await connection.connect()
-    try:
-        yield connection
-    finally:
-        await connection.close()
+    async def close(self) -> None:
+        for socket in self._command_sockets:
+            await socket.close()
+        await self._event_socket.close()

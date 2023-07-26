@@ -65,7 +65,7 @@ class SwayIPCSocket:
         await self.close()
         await asyncio.sleep(1)  # Use asyncio.sleep for async sleep
         await self.connect()
-        print("reacquired socket!")
+        print("reacquired socket")
 
     async def send(self, message_type, command=""):
         payload_length = len(command)

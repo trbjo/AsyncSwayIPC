@@ -76,8 +76,12 @@ class SwayIPCSocket:
         data += payload_type.to_bytes(payload_type_length, sys.byteorder)
         data += command.encode()
 
-        self.writer.write(data)
-        await self.writer.drain()
+        try:
+            self.writer.write(data)
+            await self.writer.drain()
+        except ConnectionResetError:
+            await self.reconnect("ConnectionResetError, send")
+            await self.send(message_type, command)
 
     async def receive_event(self) -> tuple[str, dict | list]:
         header = await self.reader.read(

@@ -38,8 +38,7 @@ async def signal_wrapper(
 
 def send_signal(parent_pid: int, app_id: str, sign: int):
     """
-    Handles starting and stopping of apps. this is the only method allowed to mutate the
-    stopped_apps dict
+    Handles starting and stopping of apps.
     """
     global stopped_apps
 

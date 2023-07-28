@@ -7,7 +7,7 @@ Restart=always
 Environment=PYTHONUNBUFFERED=1
 TimeoutStopSec=2
 WorkingDirectory=%h/code/sway-ipc
-ExecStart=%h/code/sway-ipc/swayipc
+ExecStart=%h/code/sway-ipc/swayipc.py
 
 [Install]
 WantedBy=sway-session.target

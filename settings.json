@@ -1,32 +1,31 @@
 {
-    "no_wakeup": [
-        "mpv"
-    ],
-    "wakeup_interval": 2,
-    "sleep_interval": 38,
     "subscriptions": {
+        "binding": {
+            "run": true
+        },
+        "output": {
+            "unspecified": true
+        },
         "window": {
-            "close": "window_handler",
+            "close": true,
             "floating": false,
-            "focus": "window_handler",
-            "fullscreen_mode": "window_handler",
+            "focus": true,
+            "fullscreen_mode": true,
             "mark": false,
-            "move": "window_handler",
-            "new": "window_handler",
+            "move": true,
+            "new": true,
             "title": false,
             "urgent": false
         },
         "workspace": {
             "empty": false,
-            "focus": "window_handler",
-            "init": "window_handler",
+            "focus": true,
+            "init": true,
             "move": false,
             "reload": false,
             "rename": false,
             "urgent": false
-        },
-        "output": {
-            "unspecified": "output_handler"
         }
-    }
+    },
+    "timer_seconds": 30
 }

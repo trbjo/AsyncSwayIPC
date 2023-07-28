@@ -81,10 +81,6 @@ class SwayIPCSocket:
             magic_string_len + payload_length_length + payload_type_length
         )
 
-        event_bytes = header[magic_string_len + payload_length_length : :]
-        event_type = int.from_bytes(event_bytes, byteorder=sys.byteorder)
-        event = events.get(event_type, "unknown")
-
         payload_length_bytes = header[
             magic_string_len : magic_string_len + payload_length_length
         ]
@@ -93,7 +89,12 @@ class SwayIPCSocket:
         try:
             raw_response = await self.reader.read(payload_length)
             resp_decoded = orjson.loads(raw_response)
-            return event, resp_decoded
+
+            event_bytes = header[magic_string_len + payload_length_length : :]
+            event_int = int.from_bytes(event_bytes, byteorder=sys.byteorder)
+            event_human = events.get(event_int, "unknown")
+
+            return event_human, resp_decoded
 
         except orjson.JSONDecodeError:
             await self.reconnect("JSONDecodeError")

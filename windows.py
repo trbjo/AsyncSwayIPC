@@ -67,20 +67,21 @@ async def fullscreen_enable(ipc: SwayIPCConnection, subevent: str) -> bool:
     return False
 
 
-async def signal_background(
-    ipc: SwayIPCConnection, sign: Signals = SIGSTOP, seconds: float = 0
-):
-    """if seconds is set, it will put the windows to sleep after"""
-    try:
-        apps = [(pid, app) for pid, app, active in await overview(ipc) if not active]
-
-        await signal_wrapper(apps, sign, seconds)
-
-        if seconds and sign == SIGCONT:
-            await signal_background(ipc, SIGSTOP)
-
-    except asyncio.CancelledError:
-        return
+async def inactive_windows(ipc: SwayIPCConnection, duration: float = 0):
+    """Sends a Signal to all inactive windows.
+    `duration` is a float, if positive it will send SIGCONT, and after the elapsed
+    duration send SIGSTOP. If `duration` is negative, it will send SIGSTOP.
+    Please note that the function blocks for the duration of `duration`,
+    so you might want to wrap this in an asyncio Task
+    """
+    views = [(pid, app) for pid, app, active in await overview(ipc) if not active]
+    if duration > 0:
+        await signal_wrapper(views, SIGCONT, duration)
+        await inactive_windows(ipc, -1)
+    elif duration < 0:
+        await signal_wrapper(views, SIGSTOP)
+    else:
+        await signal_wrapper(views, SIGCONT)
 
 
 async def signal_all(ipc: SwayIPCConnection):

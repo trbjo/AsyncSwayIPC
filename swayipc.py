@@ -1,18 +1,18 @@
 #!/usr/bin/python
 
 import asyncio
-from signal import SIGCONT, SIGINT, SIGSTOP, SIGTERM
+from signal import SIGINT, SIGTERM
 
 import orjson
 from core import SwayIPCConnection
-from windows import fullscreen_enable, signal_all, signal_background
+from windows import fullscreen_enable, inactive_windows, signal_all
 
 
 async def timer(ipc: SwayIPCConnection, seconds: int):
     try:
         while True:
             await asyncio.sleep(seconds)
-            await signal_background(ipc, sign=SIGCONT, seconds=1)
+            await inactive_windows(ipc, duration=1)
 
     except asyncio.CancelledError:
         return
@@ -25,30 +25,38 @@ async def event_listener(
 
     try:
         await ipc.subscribe(events)
-        t = asyncio.create_task(signal_background(ipc, sign=SIGSTOP))
 
         while True:
             event, change, response = await ipc.listen()
             if not subscriptions[event][change]:
                 continue
 
-            if event == "output":
-                t.cancel()
-                t = asyncio.create_task(signal_background(ipc, sign=SIGCONT, seconds=1))
-            elif event == "binding":
-                command = response["binding"].get("command")
-                if command == "kill":
-                    await signal_background(ipc, sign=SIGCONT)
-                # this ought to be a window event
-                elif command == "layout toggle tabbed split":
-                    await signal_all(ipc)
+            match event:
+                case "output":
+                    asyncio.create_task(inactive_windows(ipc, duration=10))
+                    outputs = await ipc.get_outputs()
+                    outputs = [
+                        (o["name"], o["active"]) for o in outputs if o.get("name")
+                    ]
+                    if any(o[1] is True for o in outputs):
+                        continue
+                    for name, _ in outputs:
+                        await ipc.run_command(f"output {name} enable")
 
-            elif (
-                event == "window"
-                and not await fullscreen_enable(ipc, change)
-                or event == "workspace"
-            ):
-                await signal_all(ipc)
+                case "binding":
+                    match response["binding"].get("command"):
+                        case "kill":
+                            await inactive_windows(ipc)
+                        case "layout toggle tabbed split":
+                            # this ought to be a window event
+                            await signal_all(ipc)
+
+                case "window":
+                    if not await fullscreen_enable(ipc, change):
+                        await signal_all(ipc)
+
+                case "workspace":
+                    await signal_all(ipc)
 
     except asyncio.CancelledError:
         return
@@ -70,7 +78,7 @@ async def main(settings: dict):
         tasks = [timer(ipc, seconds), event_listener(ipc, subscriptions)]
         await asyncio.gather(*tasks)
     except asyncio.exceptions.CancelledError:
-        await signal_background(ipc, sign=SIGCONT)
+        await inactive_windows(ipc)
     finally:
         await ipc.close()
 

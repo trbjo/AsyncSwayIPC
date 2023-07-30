@@ -1,15 +1,15 @@
 import asyncio
 import os
-from signal import SIGCONT, SIGSTOP
+from signal import SIGCONT, SIGSTOP, Signals
 
-# terminal emulators should not have their grandchildren suspended
-no_recursion = {"Alacritty", "PopUp", "foot"}
+# terminal emulators should not be suspended
+no_suspend = {"Alacritty", "PopUp", "footclient"}
 lock: int = 0
 stopped_apps: dict[int, str] = {}
 
 
 async def signal_wrapper(
-    windows: list[tuple[int, str]], sign: int, lock_sec: float = 0
+    views: list[tuple[int, str]], sign: Signals, lock_sec: float = 0
 ):
     """
     If lock_sec is set, this method will refuse to
@@ -22,7 +22,7 @@ async def signal_wrapper(
     if lock_sec > 0 and sign == SIGCONT:
         lock += 1
 
-    for pid, app_id in windows:
+    for pid, app_id in views:
         send_signal(pid, app_id, sign)
 
     if not (lock and lock_sec > 0):
@@ -40,6 +40,9 @@ def send_signal(parent_pid: int, app_id: str, sign: int):
     """
     Handles starting and stopping of apps.
     """
+    if app_id in no_suspend:
+        return
+
     global stopped_apps
 
     if (sign == SIGCONT and parent_pid not in stopped_apps) or (
@@ -53,7 +56,7 @@ def send_signal(parent_pid: int, app_id: str, sign: int):
         stopped_apps[parent_pid] = app_id
 
     # reverse the list because we want to signal children first
-    for pid in pids_for_proc(parent_pid, app_id not in no_recursion)[::-1]:
+    for pid in pid_children(parent_pid)[::-1]:
         try:
             os.kill(pid, sign)
         except ProcessLookupError:
@@ -66,23 +69,27 @@ def send_signal(parent_pid: int, app_id: str, sign: int):
             continue
 
 
-def pids_for_proc(pid: int, recurse: bool) -> list[int]:
+def pid_children(pid: int) -> list[int]:
+    # If initial PID does not exist, return an empty list
+    if not os.path.exists(f"/proc/{pid}"):
+        return []
+
     pids = [pid]
-    idx = 0
-    while True:
-        pid = pids[idx]
-        with os.scandir(f"/proc/{pid}/task/") as parent_pid:
-            for file in parent_pid:
-                try:
-                    with open(f"{file.path}/children", "r") as f:
-                        file_contents = f.read().split()
-                except FileNotFoundError:
-                    continue
+    for pid in pids:
+        try:
+            with os.scandir(f"/proc/{pid}/task/") as tasks:
+                # For every task directory, try to read the children file.
+                children_files = [task.path + "/children" for task in tasks]
+        except FileNotFoundError:
+            continue
 
-                for value in set(int(child_pid) for child_pid in file_contents):
-                    if value not in pids:
-                        pids.append(value)
-        idx += 1
+        for child_file in children_files:
+            try:
+                with open(child_file, "r") as f:
+                    child_pids = map(int, f.read().split())
+                    # Append any child PID not already in pids list.
+                    pids.extend(child for child in child_pids if child not in pids)
+            except FileNotFoundError:
+                continue
 
-        if not recurse or idx == len(pids):
-            return pids
+    return pids

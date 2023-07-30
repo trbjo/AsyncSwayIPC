@@ -43,14 +43,14 @@ events = {
 
 class SwayIPCSocket:
     def __init__(self):
-        self.socket = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])
-        if not self.socket:
-            raise EnvironmentError("Could not find the socket")
-
+        self.lock = asyncio.Lock()
         self.reader: asyncio.StreamReader = None  # pyright: ignore
         self.writer: asyncio.StreamWriter = None  # pyright: ignore
 
     async def connect(self):
+        self.socket = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])
+        if not self.socket:
+            raise EnvironmentError("Could not find the socket")
         self.reader, self.writer = await asyncio.open_unix_connection(path=self.socket)
 
     async def reconnect(self, source: str):
@@ -106,15 +106,22 @@ class SwayIPCSocket:
             await self.writer.wait_closed()
 
     async def send_receive(self, message_type, command=""):
-        while True:
-            try:
-                await self.send(message_type, command.encode())
-                _, response = await self.receive_event()
-                return response
-            except (OSError, ConnectionError):
-                await self.reconnect(
-                    f"send_receive, msg type: {message_type} {command}"
-                )
+        async with self.lock:  # ensure only one coroutine is in this block at a time
+            while True:
+                try:
+                    await self.send(message_type, command.encode())
+                except (OSError, ConnectionError):
+                    await self.reconnect(
+                        f"send_receive send, msg type: {message_type} {command}"
+                    )
+                    continue
+                try:
+                    _, response = await self.receive_event()
+                    return response
+                except (OSError, ConnectionError):
+                    await self.reconnect(
+                        f"send_receive receive, msg type: {message_type} {command}"
+                    )
 
 
 class SwayIPCConnection:

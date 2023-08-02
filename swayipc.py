@@ -10,7 +10,7 @@ async def event_listener(
     ipc: SwayIPCConnection,
     subscriptions: dict[str, dict[str, Callable | None]],
 ) -> None:
-    events = [event for event, change in subscriptions.items() if any(change)]
+    events = list(subscriptions.keys())
     try:
         await ipc.subscribe(events)
         while True:

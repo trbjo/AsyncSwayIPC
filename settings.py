@@ -28,6 +28,7 @@ def load_functions() -> tuple[dict, list]:
             for change, func in changes.items()
         }
         for event, changes in subscriptions.items()
+        if any(changes.values())
     }
     return subscriptions, tasks
 

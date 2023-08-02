@@ -44,8 +44,8 @@ events = {
 class SwayIPCSocket:
     def __init__(self):
         self.lock = asyncio.Lock()
-        self.reader: asyncio.StreamReader = None  # pyright: ignore
-        self.writer: asyncio.StreamWriter = None  # pyright: ignore
+        self.reader: asyncio.StreamReader
+        self.writer: asyncio.StreamWriter
 
     async def connect(self):
         self.socket = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])

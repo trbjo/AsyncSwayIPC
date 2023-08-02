@@ -34,12 +34,17 @@ def load_functions() -> tuple[dict, list]:
 
 def format_path(directory: str, key: str) -> tuple[str, str]:
     path, function_name = key.split(":")
-    file_path = os.path.join(
-        directory, path + (".py" if not path.endswith(".py") else "")
-    )
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File {file_path} does not exist")
-    return file_path, function_name
+
+    if not path.startswith("/"):
+        path = os.path.join(directory, path)
+
+    if not path.endswith(".py"):
+        path += ".py"
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File {path} does not exist")
+
+    return path, function_name
 
 
 def load_function(path, function_name) -> Callable:

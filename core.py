@@ -165,8 +165,8 @@ class SwayIPCConnection:
         while True:
             try:
                 event, response = await self._sockets[0].receive_event()
-                subevent = response["change"]  # pyright: ignore
-                return event, subevent, response  # pyright: ignore
+                change = response["change"]  # pyright: ignore
+                return event, change, response  # pyright: ignore
             except (OSError, ConnectionError):
                 await self._sockets[0].reconnect("eventlistener")
 

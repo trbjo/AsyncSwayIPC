@@ -1,31 +1,31 @@
 {
     "subscriptions": {
         "binding": {
-            "run": true
+            "run": null
         },
         "output": {
-            "unspecified": true
+            "unspecified": null
         },
         "window": {
-            "close": true,
-            "floating": false,
-            "focus": true,
-            "fullscreen_mode": true,
-            "mark": false,
-            "move": true,
-            "new": true,
-            "title": false,
-            "urgent": false
+            "close": null,
+            "floating": null,
+            "focus": null,
+            "fullscreen_mode": null,
+            "mark": null,
+            "move": null,
+            "new": null,
+            "title": null,
+            "urgent": null
         },
         "workspace": {
-            "empty": false,
-            "focus": true,
-            "init": true,
-            "move": false,
-            "reload": false,
-            "rename": false,
-            "urgent": false
+            "empty": null,
+            "focus": null,
+            "init": null,
+            "move": null,
+            "reload": null,
+            "rename": null,
+            "urgent": null
         }
     },
-    "timer_seconds": 30
+    "tasks": []
 }

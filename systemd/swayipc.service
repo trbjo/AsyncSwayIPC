@@ -4,10 +4,10 @@ BindsTo=sway-session.target
 [Service]
 Type=simple
 Restart=always
-Environment=PYTHONUNBUFFERED=1
+Environment=SWAYIPC_MODULES_PATH=%h/code/sway-ipc/submodule
 TimeoutStopSec=2
 WorkingDirectory=%h/code/sway-ipc
-ExecStart=%h/code/sway-ipc/swayipc.py
+ExecStart=/usr/bin/python %h/code/sway-ipc/swayipc.py
 
 [Install]
 WantedBy=sway-session.target

@@ -125,9 +125,6 @@ class SwayIPCSocket:
 
 
 class SwayIPCConnection:
-    def __init__(self, reconnect_delay=1) -> None:
-        self.reconnect_delay = reconnect_delay
-
     async def _create_socket(self) -> SwayIPCSocket:
         socket = SwayIPCSocket()
         await socket.connect()

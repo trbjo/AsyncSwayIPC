@@ -24,7 +24,6 @@ async def event_listener(
 async def run(loop):
     subscriptions, tasks = load_functions()
     ipc = SwayIPCConnection()
-    await ipc.connect()
 
     for s in [SIGINT, SIGTERM]:
         loop.add_signal_handler(

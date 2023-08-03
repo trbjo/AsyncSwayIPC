@@ -212,5 +212,6 @@ class SwayIPCConnection:
         for attr_name in dir(self):
             if attr_name.endswith("_socket"):
                 socket = getattr(self, attr_name)
-                await socket.close()
-                setattr(self, attr_name, None)
+                if socket is not None:  # Check if the socket has been initialized
+                    await socket.close()
+                    setattr(self, attr_name, None)

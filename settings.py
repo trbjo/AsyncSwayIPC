@@ -6,30 +6,57 @@ from typing import Callable
 import orjson
 
 
+def copy_file(source_file, destination_file):
+    with open(source_file, "rb") as src:
+        with open(destination_file, "wb") as dest:
+            dest.write(src.read())
+
+
+def extract_functions(subscriptions, tasks, modules_dir) -> dict[str, Callable]:
+    funcs: set[str] = {
+        value
+        for subdict in subscriptions.values()
+        for value in subdict.values()
+        if value
+    }
+    funcs.update(tasks)
+    return {func: load_function(*format_path(modules_dir, func)) for func in funcs}
+
+
 def load_functions() -> tuple[dict, list]:
     current_file_path = os.path.abspath(__file__)
     current_directory = os.path.dirname(current_file_path)
+    xdg_config: str | None = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config is None:
+        raise EnvironmentError("XDG_CONFIG_HOME, is not set, exit")
 
-    modules_dir: str = os.environ.get("SWAYIPC_MODULES_PATH", current_directory)
-    if not os.path.exists(modules_dir):
-        raise FileNotFoundError(f"settings file {modules_dir} does not exist")
+    settings_dir = f"{xdg_config}/swayipc"
+    if not os.path.exists(settings_dir):
+        os.mkdir(settings_dir)
 
-    settings_file = f"{modules_dir}/settings.json"
+    settings_file = f"{settings_dir}/settings.json"
+    if not os.path.exists(settings_file):
+        copy_file(f"{current_directory}/settings.json", settings_file)
+        copy_file(f"{current_directory}/examples.py", f"{settings_dir}/examples.py")
+
     with open(os.path.abspath(settings_file), "rb") as f:
         settings = orjson.loads(f.read())
 
+    modules_dir = settings.get("module_path", settings_dir)
+
+    subscriptions = settings["subscriptions"]
     tasks = settings["tasks"]
 
-    tasks = [load_function(*format_path(modules_dir, task)) for task in tasks]
-    subscriptions = settings["subscriptions"]
+    func_dict = extract_functions(subscriptions, tasks, modules_dir)
+
+    tasks = [func_dict[task] for task in tasks]
+
     subscriptions = {
-        event: {
-            change: load_function(*format_path(modules_dir, func)) if func else None
-            for change, func in changes.items()
-        }
+        event: {change: func_dict.get(func) for change, func in changes.items()}
         for event, changes in subscriptions.items()
         if any(changes.values())
     }
+
     return subscriptions, tasks
 
 

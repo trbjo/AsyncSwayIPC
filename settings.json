@@ -1,10 +1,33 @@
 {
+    "module_path": "",
     "subscriptions": {
+        "bar_state_update": {
+            "run": null
+        },
+        "barconfig_update": {
+            "run": null
+        },
         "binding": {
             "run": null
         },
+        "input": {
+            "added": null,
+            "libinput_config": null,
+            "removed": null,
+            "xkb_keymap": null,
+            "xkb_layout": null
+        },
+        "mode": {
+            "default": null
+        },
         "output": {
             "unspecified": null
+        },
+        "shutdown": {
+            "exit": null
+        },
+        "tick": {
+            "run": null
         },
         "window": {
             "close": null,

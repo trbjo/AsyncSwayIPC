@@ -9,14 +9,14 @@ from settings import load_functions
 async def event_listener(
     ipc: SwayIPCConnection,
     subscriptions: dict[str, dict[str, Callable | None]],
-) -> None:
+):
     events = list(subscriptions.keys())
     try:
         await ipc.subscribe(events)
         while True:
-            event, change, content = await ipc.listen()
+            event, change, payload = await ipc.listen()
             if func := subscriptions[event][change]:
-                await func(ipc, content)
+                await func(ipc, payload)
     except asyncio.CancelledError:
         return
 

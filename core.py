@@ -127,49 +127,93 @@ class SwayIPCSocket:
 class SwayIPCConnection:
     def __init__(self, reconnect_delay=1) -> None:
         self.reconnect_delay = reconnect_delay
-        self._sockets = [SwayIPCSocket() for _ in range(5)]
 
-    async def connect(self) -> None:
-        while True:
-            try:
-                for socket in self._sockets:
-                    await socket.connect()
-                break
-            except (OSError, ConnectionError) as e:
-                if e.errno != errno.ECONNREFUSED:
-                    raise
-                print("Connection lost, trying to reconnect…")
-                await asyncio.sleep(self.reconnect_delay)
+    async def _create_socket(self) -> SwayIPCSocket:
+        socket = SwayIPCSocket()
+        await socket.connect()
+        return socket
+
+    async def run_command(self, command: str):
+        if not hasattr(self, "_run_socket"):
+            self._run_socket = await self._create_socket()
+        return await self._run_socket.send_receive("RUN_COMMAND", command)
+
+    async def get_workspaces(self):
+        if not hasattr(self, "_workspace_socket"):
+            self._workspace_socket = await self._create_socket()
+        return await self._workspace_socket.send_receive("GET_WORKSPACES")
 
     async def subscribe(self, events: list[str]) -> bool:
-        await self._sockets[0].send("SUBSCRIBE", orjson.dumps(events))
-        _, response = await self._sockets[0].receive_event()
-        status = response["success"]  # pyright: ignore
+        self._listen_socket = await self._create_socket()
+        await self._listen_socket.send("SUBSCRIBE", orjson.dumps(events))
+        _, response = await self._listen_socket.receive_event()
+        status = response.get("success")  # pyright: ignore
         if not status:
             raise ConnectionError(f"Could subscribe with {events}, reply: {response}")
         return status
 
-    async def run_command(self, command: str):
-        return await self._sockets[1].send_receive("RUN_COMMAND", command)
-
-    async def get_workspaces(self):
-        return await self._sockets[2].send_receive("GET_WORKSPACES")
+    async def get_outputs(self):
+        if not hasattr(self, "_output_socket"):
+            self._output_socket = await self._create_socket()
+        return await self._output_socket.send_receive("GET_OUTPUTS")
 
     async def get_tree(self):
-        return await self._sockets[3].send_receive("GET_TREE")
+        if not hasattr(self, "_tree_socket"):
+            self._tree_socket = await self._create_socket()
+        return await self._tree_socket.send_receive("GET_TREE")
 
-    async def get_outputs(self):
-        return await self._sockets[4].send_receive("GET_OUTPUTS")
+    async def get_marks(self):
+        if not hasattr(self, "_marks_socket"):
+            self._marks_socket = await self._create_socket()
+        return await self._marks_socket.send_receive("GET_MARKS")
+
+    async def get_bar_config(self):
+        if not hasattr(self, "_config_socket"):
+            self._config_socket = await self._create_socket()
+        return await self._config_socket.send_receive("GET_BAR_CONFIG")
+
+    async def get_version(self):
+        if not hasattr(self, "_version_socket"):
+            self._version_socket = await self._create_socket()
+        return await self._version_socket.send_receive("GET_VERSION")
+
+    async def get_binding_modes(self):
+        if not hasattr(self, "_binding_modes_socket"):
+            self._binding_modes_socket = await self._create_socket()
+        return await self._binding_modes_socket.send_receive("GET_BINDING_MODES")
+
+    async def get_config(self):
+        if not hasattr(self, "_config_socket"):
+            self._config_socket = await self._create_socket()
+        return await self._config_socket.send_receive("GET_CONFIG")
+
+    async def send_tick(self):
+        if not hasattr(self, "_tick_socket"):
+            self._tick_socket = await self._create_socket()
+        return await self._tick_socket.send_receive("SEND_TICK")
+
+    async def get_inputs(self):
+        if not hasattr(self, "_input_socket"):
+            self._input_socket = await self._create_socket()
+        return await self._input_socket.send_receive("GET_INPUTS")
+
+    async def get_seats(self):
+        if not hasattr(self, "_seats_socket"):
+            self._seats_socket = await self._create_socket()
+        return await self._seats_socket.send_receive("GET_INPUTS")
 
     async def listen(self) -> tuple[str, str, dict]:
         while True:
             try:
-                event, response = await self._sockets[0].receive_event()
-                change = response["change"]  # pyright: ignore
-                return event, change, response  # pyright: ignore
+                event, payload = await self._listen_socket.receive_event()
+                change = payload.get("change", "run")  # pyright: ignore
+                return event, change, payload  # pyright: ignore
             except (OSError, ConnectionError):
-                await self._sockets[0].reconnect("eventlistener")
+                await self._listen_socket.reconnect("eventlistener")
 
-    async def close(self) -> None:
-        for socket in self._sockets:
-            await socket.close()
+    async def close(self):
+        for attr_name in dir(self):
+            if attr_name.endswith("_socket"):
+                socket = getattr(self, attr_name)
+                await socket.close()
+                setattr(self, attr_name, None)

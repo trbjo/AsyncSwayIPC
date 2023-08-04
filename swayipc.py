@@ -11,14 +11,9 @@ async def event_listener(
     subscriptions: dict[str, dict[str, Callable | None]],
 ):
     events = list(subscriptions.keys())
-    try:
-        await ipc.subscribe(events)
-        while True:
-            event, change, payload = await ipc.listen()
-            if func := subscriptions[event][change]:
-                await func(ipc, payload)
-    except asyncio.CancelledError:
-        return
+    async for event, change, payload in ipc.subscribe(events):
+        if func := subscriptions[event][change]:
+            await func(ipc, payload)
 
 
 async def run(loop):

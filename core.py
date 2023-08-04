@@ -1,32 +1,19 @@
 import asyncio
 import os
 import sys
+from collections import defaultdict
+from typing import AsyncGenerator
 
 import orjson
 
 magic_string = "i3-ipc"
-magic_string_len = len(magic_string)
-payload_length_length = 4
-payload_type_length = 4
+magic_len = len(magic_string)
+magic_enc = magic_string.encode()
+payload_len_len = 4  # length of payload length
+payload_type_len = 4  # length of payload type
+header_len = magic_len + payload_len_len + payload_type_len
 
-message_types = {
-    "RUN_COMMAND": 0,
-    "GET_WORKSPACES": 1,
-    "SUBSCRIBE": 2,
-    "GET_OUTPUTS": 3,
-    "GET_TREE": 4,
-    "GET_MARKS": 5,
-    "GET_BAR_CONFIG": 6,
-    "GET_VERSION": 7,
-    "GET_BINDING_MODES": 8,
-    "GET_CONFIG": 9,
-    "SEND_TICK": 10,
-    "SYNC": 11,
-    "GET_INPUTS": 100,
-    "GET_SEATS": 101,
-}
-
-events = {
+_events = {
     0x80000000: "workspace",
     0x80000001: "output",
     0x80000002: "mode",
@@ -43,174 +30,128 @@ events = {
 class SwayIPCSocket:
     def __init__(self):
         self.lock = asyncio.Lock()
-        self.reader: asyncio.StreamReader
-        self.writer: asyncio.StreamWriter
+        self.reader: asyncio.StreamReader = None  # pyright: ignore
+        self.writer: asyncio.StreamWriter = None  # pyright: ignore
 
     async def connect(self):
-        self.socket = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])
-        if not self.socket:
+        socket_path = next(os.environ.get(socket) for socket in ["SWAYSOCK", "I3SOCK"])
+        if not socket_path:
             raise EnvironmentError("Could not find the socket")
-        self.reader, self.writer = await asyncio.open_unix_connection(path=self.socket)
+        self.reader, self.writer = await asyncio.open_unix_connection(path=socket_path)
 
-    async def reconnect(self, source: str):
-        print(f"Socket error due to {source}, trying to reconnect… ", end="")
+    async def reconnect(self, error_message: str):
+        print(f"{error_message}, trying to reconnect… ", end="")
         await self.close()
         await asyncio.sleep(1)
         await self.connect()
         print("reacquired socket")
 
-    async def send(self, message_type, command=b""):
-        payload_length = len(command)
-        payload_type = message_types[message_type.upper()]
+    async def send(self, payload_type: int, command=b""):
+        if not self.writer:  # first time calling, create socket
+            await self.connect()
 
-        data = magic_string.encode()
-        data += payload_length.to_bytes(payload_length_length, sys.byteorder)
-        data += payload_type.to_bytes(payload_type_length, sys.byteorder)
+        payload_length = len(command)
+
+        data = magic_enc
+        data += payload_length.to_bytes(payload_len_len, sys.byteorder)
+        data += payload_type.to_bytes(payload_type_len, sys.byteorder)
         data += command
 
-        try:
-            self.writer.write(data)
-            await self.writer.drain()
-        except ConnectionResetError:
-            await self.reconnect("ConnectionResetError, send")
-            await self.send(message_type, command)
+        self.writer.write(data)
+        await self.writer.drain()
 
-    async def receive_event(self) -> tuple[str, dict | list]:
-        header = await self.reader.read(
-            magic_string_len + payload_length_length + payload_type_length
-        )
-
-        payload_length_bytes = header[
-            magic_string_len : magic_string_len + payload_length_length
-        ]
+    async def receive(self, include_event: bool = False) -> tuple[str, dict] | dict:
+        header = await self.reader.read(header_len)
+        payload_length_bytes = header[magic_len : magic_len + payload_len_len]
         payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
 
-        try:
-            raw_response = await self.reader.read(payload_length)
-            resp_decoded = orjson.loads(raw_response)
+        raw_response = await self.reader.read(payload_length)
+        resp_decoded = orjson.loads(raw_response)
 
-            event_bytes = header[magic_string_len + payload_length_length : :]
-            event_int = int.from_bytes(event_bytes, byteorder=sys.byteorder)
-            event_human = events.get(event_int, "unknown")
+        if not include_event:
+            return resp_decoded
 
-            return event_human, resp_decoded
-
-        except orjson.JSONDecodeError:
-            await self.reconnect("JSONDecodeError")
-            return "error", []
+        event_bytes = header[magic_len + payload_len_len : :]
+        event_int = int.from_bytes(event_bytes, byteorder=sys.byteorder)
+        event_human = _events.get(event_int, "unknown")
+        return event_human, resp_decoded
 
     async def close(self):
         if self.writer and not self.writer.is_closing():
             self.writer.close()
             await self.writer.wait_closed()
 
-    async def send_receive(self, message_type, command=""):
+    async def send_receive(self, payload_type: int, command=b"") -> dict | list[dict]:
         async with self.lock:  # ensure only one coroutine is in this block at a time
-            while True:
-                try:
-                    await self.send(message_type, command.encode())
-                except (OSError, ConnectionError):
-                    await self.reconnect(
-                        f"send_receive send, msg type: {message_type} {command}"
-                    )
-                    continue
-                try:
-                    _, response = await self.receive_event()
-                    return response
-                except (OSError, ConnectionError):
-                    await self.reconnect(
-                        f"send_receive receive, msg type: {message_type} {command}"
-                    )
+            await self.send(payload_type, command)
+            return await self.receive()  # pyright: ignore
 
 
 class SwayIPCConnection:
-    async def _create_socket(self) -> SwayIPCSocket:
-        socket = SwayIPCSocket()
-        await socket.connect()
-        return socket
+    def __init__(self) -> None:
+        self.sockets = defaultdict(lambda: SwayIPCSocket())
 
-    async def run_command(self, command: str):
-        if not hasattr(self, "_run_socket"):
-            self._run_socket = await self._create_socket()
-        return await self._run_socket.send_receive("RUN_COMMAND", command)
+    async def run_command(self, c: str):
+        return await self.sockets["run_command"].send_receive(0, c.encode())
 
     async def get_workspaces(self):
-        if not hasattr(self, "_workspace_socket"):
-            self._workspace_socket = await self._create_socket()
-        return await self._workspace_socket.send_receive("GET_WORKSPACES")
+        return await self.sockets["get_workspaces"].send_receive(1)
 
-    async def subscribe(self, events: list[str]) -> bool:
-        self._listen_socket = await self._create_socket()
-        await self._listen_socket.send("SUBSCRIBE", orjson.dumps(events))
-        _, response = await self._listen_socket.receive_event()
-        status = response.get("success")  # pyright: ignore
-        if not status:
-            raise ConnectionError(f"Could subscribe with {events}, reply: {response}")
-        return status
-
-    async def get_outputs(self):
-        if not hasattr(self, "_output_socket"):
-            self._output_socket = await self._create_socket()
-        return await self._output_socket.send_receive("GET_OUTPUTS")
+    async def get_outputs(self) -> list[dict]:
+        return await self.sockets["get_outputs"].send_receive(3)  # pyright: ignore
 
     async def get_tree(self):
-        if not hasattr(self, "_tree_socket"):
-            self._tree_socket = await self._create_socket()
-        return await self._tree_socket.send_receive("GET_TREE")
+        return await self.sockets["get_tree"].send_receive(4)
 
     async def get_marks(self):
-        if not hasattr(self, "_marks_socket"):
-            self._marks_socket = await self._create_socket()
-        return await self._marks_socket.send_receive("GET_MARKS")
+        return await self.sockets["get_marks"].send_receive(5)
 
     async def get_bar_config(self):
-        if not hasattr(self, "_config_socket"):
-            self._config_socket = await self._create_socket()
-        return await self._config_socket.send_receive("GET_BAR_CONFIG")
+        return await self.sockets["get_bar_config"].send_receive(6)
 
     async def get_version(self):
-        if not hasattr(self, "_version_socket"):
-            self._version_socket = await self._create_socket()
-        return await self._version_socket.send_receive("GET_VERSION")
+        return await self.sockets["get_version"].send_receive(7)
 
     async def get_binding_modes(self):
-        if not hasattr(self, "_binding_modes_socket"):
-            self._binding_modes_socket = await self._create_socket()
-        return await self._binding_modes_socket.send_receive("GET_BINDING_MODES")
+        return await self.sockets["get_binding_modes"].send_receive(8)
 
     async def get_config(self):
-        if not hasattr(self, "_config_socket"):
-            self._config_socket = await self._create_socket()
-        return await self._config_socket.send_receive("GET_CONFIG")
+        return await self.sockets["get_config"].send_receive(9)
 
     async def send_tick(self):
-        if not hasattr(self, "_tick_socket"):
-            self._tick_socket = await self._create_socket()
-        return await self._tick_socket.send_receive("SEND_TICK")
+        return await self.sockets["send_tick"].send_receive(10)
 
     async def get_inputs(self):
-        if not hasattr(self, "_input_socket"):
-            self._input_socket = await self._create_socket()
-        return await self._input_socket.send_receive("GET_INPUTS")
+        return await self.sockets["get_inputs"].send_receive(100)
 
     async def get_seats(self):
-        if not hasattr(self, "_seats_socket"):
-            self._seats_socket = await self._create_socket()
-        return await self._seats_socket.send_receive("GET_INPUTS")
+        return await self.sockets["get_seats"].send_receive(101)
 
-    async def listen(self) -> tuple[str, str, dict]:
+    async def subscribe(
+        self, events: list[str]
+    ) -> AsyncGenerator[tuple[str, str, dict], None]:
+        if not all(r in _events.values() for r in events):
+            raise ValueError("invalid payload")
+
+        socket = self.sockets["subscribe"]
+        if not (await socket.send_receive(2, orjson.dumps(events))).get("success"):
+            raise ConnectionError(f"Could not subscribe with {events}")
+
         while True:
             try:
-                event, payload = await self._listen_socket.receive_event()
-                change = payload.get("change", "run")  # pyright: ignore
-                return event, change, payload  # pyright: ignore
-            except (OSError, ConnectionError):
-                await self._listen_socket.reconnect("eventlistener")
+                event, payload = await socket.receive(include_event=True)
+                yield event, payload.get("change", "run"), payload
+            except orjson.JSONDecodeError as e:
+                await socket.reconnect(str(e))
+                await socket.send_receive(2, orjson.dumps(events))
+            except asyncio.exceptions.CancelledError:
+                await self.close("subscribe")
+                return
 
-    async def close(self):
-        for attr_name in dir(self):
-            if attr_name.endswith("_socket"):
-                socket = getattr(self, attr_name)
-                if socket is not None:  # Check if the socket has been initialized
-                    await socket.close()
-                    setattr(self, attr_name, None)
+    async def close(self, *socket_names):
+        if not socket_names:
+            socket_names = list(self.sockets.keys())
+
+        for name in socket_names:
+            socket = self.sockets.pop(name)
+            await socket.close()

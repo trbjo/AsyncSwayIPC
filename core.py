@@ -149,7 +149,7 @@ class SwayIPCConnection:
                 return
 
     async def close(self, socket_names: list[str] | None = None):
-        if not socket_names:
+        if socket_names is None:
             socket_names = list(self.sockets.keys())
 
         for name in socket_names:

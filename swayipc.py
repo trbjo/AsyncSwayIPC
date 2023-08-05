@@ -16,7 +16,7 @@ async def event_listener(
             await func(ipc, payload)
 
 
-async def run(loop):
+async def main(loop):
     subscriptions, tasks = load_functions()
     ipc = SwayIPCConnection()
 
@@ -36,6 +36,6 @@ async def run(loop):
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(run(loop))
+        loop.run_until_complete(main(loop))
     finally:
         loop.close()

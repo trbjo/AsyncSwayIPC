@@ -11,6 +11,9 @@ SubscriptionFunc = Callable[[SwayIPCConnection, JSONDict | JSONList], Awaitable[
 Subscriptions = dict[str, dict[str, SubscriptionFunc]]
 Tasks = list[TaskFunc]
 
+settings_file = "settings.json"
+plugin_dir = "plugins"
+
 
 def copy_file(src_file: str, dest_file: str) -> None:
     with open(src_file, "rb") as src, open(dest_file, "wb") as dest:
@@ -46,14 +49,14 @@ def setup_environment() -> str:
         raise EnvironmentError("XDG_CONFIG_HOME is not set, exiting")
 
     dirs: dict[str, str] = {
-        name: os.path.join(xdg_config, "swayipc", name) for name in ["", "plugins"]
+        name: os.path.join(xdg_config, "swayipc", name) for name in ["", plugin_dir]
     }
     for dir in dirs.values():
         os.makedirs(dir, exist_ok=True)
 
-    s_file = os.path.join(dirs[""], "settings.json")
+    s_file = os.path.join(dirs[""], settings_file)
     if not os.path.exists(s_file):
-        copy_file(os.path.join(os.path.dirname(__file__), "settings.json"), s_file)
+        copy_file(os.path.join(os.path.dirname(__file__), settings_file), s_file)
     return s_file
 
 
@@ -61,7 +64,7 @@ def load_plugins_from_settings(s_file: str) -> tuple[Subscriptions, Tasks]:
     with open(s_file, "rb") as f:
         settings: dict[str, Any] = orjson.loads(f.read())
 
-    plugins = os.path.join(os.path.dirname(s_file), "plugins")
+    plugins = os.path.join(os.path.dirname(s_file), plugin_dir)
     funcs: set[str] = set(
         value
         for subdict in settings["subscriptions"].values()

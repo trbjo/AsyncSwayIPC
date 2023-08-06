@@ -1,8 +1,8 @@
 import asyncio
 from signal import SIGINT, SIGTERM
 
+from bootstrap import Subscriptions, initialize_and_load
 from core import SwayIPCConnection
-from settings import Subscriptions, initialize_and_load
 
 
 async def event_listener(ipc: SwayIPCConnection, subscriptions: Subscriptions):

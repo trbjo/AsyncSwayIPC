@@ -2,7 +2,7 @@ import asyncio
 from signal import SIGINT, SIGTERM
 
 from core import SwayIPCConnection
-from settings import Subscriptions, initialize_plugins
+from settings import Subscriptions, initialize_and_load
 
 
 async def event_listener(ipc: SwayIPCConnection, subscriptions: Subscriptions):
@@ -13,7 +13,7 @@ async def event_listener(ipc: SwayIPCConnection, subscriptions: Subscriptions):
 
 
 async def main(loop):
-    subscriptions, tasks = initialize_plugins()
+    subscriptions, tasks = initialize_and_load()
     ipc = SwayIPCConnection()
 
     for s in [SIGINT, SIGTERM]:

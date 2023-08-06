@@ -39,7 +39,8 @@ def locate_func(directory: str, key: str) -> tuple[str, str]:
     return path, funcname
 
 
-def initialize_plugins() -> tuple[Subscriptions, Tasks]:
+def setup_environment() -> str:
+    """Sets up the necessary directories and returns the path to the settings file."""
     xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
     if not xdg_config:
         raise EnvironmentError("XDG_CONFIG_HOME is not set, exiting")
@@ -53,10 +54,14 @@ def initialize_plugins() -> tuple[Subscriptions, Tasks]:
     s_file = os.path.join(dirs[""], "settings.json")
     if not os.path.exists(s_file):
         copy_file(os.path.join(os.path.dirname(__file__), "settings.json"), s_file)
+    return s_file
 
+
+def load_plugins_from_settings(s_file: str) -> tuple[Subscriptions, Tasks]:
     with open(s_file, "rb") as f:
         settings: dict[str, Any] = orjson.loads(f.read())
 
+    plugins = os.path.join(os.path.dirname(s_file), "plugins")
     funcs: set[str] = set(
         value
         for subdict in settings["subscriptions"].values()
@@ -66,7 +71,7 @@ def initialize_plugins() -> tuple[Subscriptions, Tasks]:
     funcs.update(settings["tasks"])
 
     f_dict: dict[str, TaskFunc | SubscriptionFunc] = {
-        func: load_function(*locate_func(dirs["plugins"], func)) for func in funcs
+        func: load_function(*locate_func(plugins, func)) for func in funcs
     }
 
     tasks: Tasks = [f_dict[task] for task in settings["tasks"]]  # pyright: ignore
@@ -77,3 +82,8 @@ def initialize_plugins() -> tuple[Subscriptions, Tasks]:
     }  # pyright: ignore
 
     return subs, tasks
+
+
+def initialize_and_load() -> tuple[Subscriptions, Tasks]:
+    s_file = setup_environment()
+    return load_plugins_from_settings(s_file)

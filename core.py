@@ -6,6 +6,18 @@ from typing import AsyncGenerator
 
 import orjson
 
+JSONValue = (
+    bool
+    | str
+    | None
+    | float
+    | dict[str, "JSONInnerValue"]
+    | list[dict[str, "JSONInnerValue"]]
+)
+JSONInnerValue = JSONValue | list[dict[str, JSONValue]]
+JSONDict = dict[str, JSONValue]
+JSONList = list[JSONDict]
+
 magic_string = "i3-ipc"
 magic_len = len(magic_string)
 magic_enc = magic_string.encode()
@@ -60,48 +72,53 @@ class SwayIPCSocket:
         self.writer.write(data)
         await self.writer.drain()
 
-    async def receive(self, include_event: bool = False) -> tuple[str, dict] | dict:
+    async def receive(self) -> JSONDict | JSONList:
         header = await self.reader.read(header_len)
         payload_length_bytes = header[magic_len : magic_len + payload_len_len]
         payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
 
         raw_response = await self.reader.read(payload_length)
-        resp_decoded = orjson.loads(raw_response)
+        return orjson.loads(raw_response)
 
-        if not include_event:
-            return resp_decoded
+    async def receive_event(self) -> tuple[str, JSONDict]:
+        header = await self.reader.read(header_len)
 
         event_bytes = header[magic_len + payload_len_len : :]
         event_int = int.from_bytes(event_bytes, byteorder=sys.byteorder)
         event_human = _events.get(event_int, "unknown")
-        return event_human, resp_decoded
+
+        payload_length_bytes = header[magic_len : magic_len + payload_len_len]
+        payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
+
+        raw_response = await self.reader.read(payload_length)
+        return event_human, orjson.loads(raw_response)
 
     async def close(self):
         if self.writer and not self.writer.is_closing():
             self.writer.close()
             await self.writer.wait_closed()
 
-    async def send_receive(self, payload_type: int, command=b"") -> dict | list[dict]:
+    async def send_receive(self, payload_type: int, command=b"") -> JSONDict | JSONList:
         async with self.lock:  # ensure only one coroutine is in this block at a time
             await self.send(payload_type, command)
-            return await self.receive()  # pyright: ignore
+            return await self.receive()
 
 
 class SwayIPCConnection:
     def __init__(self) -> None:
         self.sockets = defaultdict(lambda: SwayIPCSocket())
 
-    async def run_command(self, c: str):
+    async def run_command(self, c: str) -> list[dict[str, bool | str]]:
         return await self.sockets["run_command"].send_receive(0, c.encode())
 
-    async def get_workspaces(self):
-        return await self.sockets["get_workspaces"].send_receive(1)
+    async def get_workspaces(self) -> JSONList:
+        return await self.sockets["get_workspaces"].send_receive(1)  # pyright:ignore
 
-    async def get_outputs(self) -> list[dict]:
+    async def get_outputs(self) -> JSONList:
         return await self.sockets["get_outputs"].send_receive(3)  # pyright: ignore
 
-    async def get_tree(self):
-        return await self.sockets["get_tree"].send_receive(4)
+    async def get_tree(self) -> JSONDict:
+        return await self.sockets["get_tree"].send_receive(4)  # pyright:ignore
 
     async def get_marks(self):
         return await self.sockets["get_marks"].send_receive(5)
@@ -129,7 +146,7 @@ class SwayIPCConnection:
 
     async def subscribe(
         self, events: list[str]
-    ) -> AsyncGenerator[tuple[str, str, dict], None]:
+    ) -> AsyncGenerator[tuple[str, str, JSONDict], None]:
         if not all(r in _events.values() for r in events):
             raise ValueError("invalid payload")
 
@@ -139,7 +156,7 @@ class SwayIPCConnection:
 
         while True:
             try:
-                event, payload = await socket.receive(include_event=True)
+                event, payload = await socket.receive_event()
                 yield event, payload.get("change", "run"), payload
             except orjson.JSONDecodeError as e:
                 await socket.reconnect(str(e))

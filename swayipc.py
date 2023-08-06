@@ -1,23 +1,19 @@
 import asyncio
 from signal import SIGINT, SIGTERM
-from typing import Callable
 
 from core import SwayIPCConnection
-from settings import load_functions
+from settings import Subscriptions, initialize_plugins
 
 
-async def event_listener(
-    ipc: SwayIPCConnection,
-    subscriptions: dict[str, dict[str, Callable | None]],
-):
+async def event_listener(ipc: SwayIPCConnection, subscriptions: Subscriptions):
     events = list(subscriptions.keys())
     async for event, change, payload in ipc.subscribe(events):
-        if func := subscriptions[event][change]:
+        if (func := subscriptions[event][change]) is not None:
             await func(ipc, payload)
 
 
 async def main(loop):
-    subscriptions, tasks = load_functions()
+    subscriptions, tasks = initialize_plugins()
     ipc = SwayIPCConnection()
 
     for s in [SIGINT, SIGTERM]:

@@ -1,5 +1,4 @@
 {
-    "module_path": "",
     "subscriptions": {
         "bar_state_update": {
             "run": null

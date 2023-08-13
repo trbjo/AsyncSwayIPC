@@ -44,17 +44,13 @@ def locate_func(directory: str, key: str) -> tuple[str, str]:
 
 def setup_environment() -> str:
     """Sets up the necessary directories and returns the path to the settings file."""
-    xdg_config = os.environ.get("XDG_CONFIG_HOME", "")
-    if not xdg_config:
-        raise EnvironmentError("XDG_CONFIG_HOME is not set, exiting")
+    if not (config := os.environ.get("SWAYIPC")):
+        config = f"{os.environ['XDG_CONFIG_HOME']}/swayipc"
 
-    dirs: dict[str, str] = {
-        name: os.path.join(xdg_config, "swayipc", name) for name in ["", plugin_dir]
-    }
-    for dir in dirs.values():
+    for dir in {os.path.join(config, name) for name in ["", plugins]}:
         os.makedirs(dir, exist_ok=True)
 
-    s_file = os.path.join(dirs[""], settings_file)
+    s_file = os.path.join(config, settings_file)
     if not os.path.exists(s_file):
         copy_file(os.path.join(os.path.dirname(__file__), settings_file), s_file)
     return s_file

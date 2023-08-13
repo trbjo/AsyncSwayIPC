@@ -1,5 +1,5 @@
 import asyncio
-from signal import SIGINT, SIGTERM
+from signal import SIGINT, SIGTERM, SIGUSR1
 
 from bootstrap import Subscriptions, initialize_and_load
 from core import SwayIPCConnection
@@ -13,13 +13,14 @@ async def event_listener(ipc: SwayIPCConnection, subscriptions: Subscriptions):
 
 
 async def main(loop):
-    subscriptions, tasks = initialize_and_load()
+    subscriptions, tasks, sigusr_handler = initialize_and_load()
     ipc = SwayIPCConnection()
 
     for s in [SIGINT, SIGTERM]:
         loop.add_signal_handler(
             s, lambda: [task.cancel() for task in asyncio.all_tasks()]
         )
+    loop.add_signal_handler(SIGUSR1, lambda: asyncio.create_task(sigusr_handler(ipc)))
 
     try:
         aiotasks = [t(ipc) for t in tasks]

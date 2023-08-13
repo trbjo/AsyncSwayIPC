@@ -54,7 +54,7 @@ def setup_environment() -> str:
     return s_file
 
 
-def load_plugins_from_settings(s_file: str) -> tuple[Subscriptions, Tasks]:
+def load_plugins_from_settings(s_file: str) -> tuple[Subscriptions, Tasks, TaskFunc]:
     with open(s_file, "rb") as f:
         settings: dict[str, Any] = orjson.loads(f.read())
 
@@ -67,21 +67,27 @@ def load_plugins_from_settings(s_file: str) -> tuple[Subscriptions, Tasks]:
 
     funcs.update(settings["tasks"])
 
+    if (sig_func := settings.get("sigusr_handler")) is not None:
+        funcs.add(sig_func)
+
     plugin_dir = os.path.join(os.path.dirname(s_file), plugins)
     f_dict: dict[str, TaskFunc | SubscriptionFunc] = {
         func: load_function(plugin_dir, func) for func in funcs
     }
 
-    tasks: Tasks = [f_dict[task] for task in settings["tasks"]]  # pyright: ignore
     subs: Subscriptions = {
         event: {change: f_dict.get(func) for change, func in changes.items()}
         for event, changes in settings["subscriptions"].items()
         if any(changes.values())
     }  # pyright: ignore
 
-    return subs, tasks
+    tasks: Tasks = [f_dict[task] for task in settings["tasks"]]  # pyright: ignore
+
+    handler: TaskFunc = f_dict[sig_func] if sig_func else (lambda ipc: (yield from ()))
+
+    return subs, tasks, handler
 
 
-def initialize_and_load() -> tuple[Subscriptions, Tasks]:
+def initialize_and_load() -> tuple[Subscriptions, Tasks, TaskFunc]:
     s_file = setup_environment()
     return load_plugins_from_settings(s_file)

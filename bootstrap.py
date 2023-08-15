@@ -6,13 +6,7 @@ from typing import Any, Awaitable, Callable
 import orjson
 from core import JSONDict, JSONList, SwayIPCConnection
 
-TaskFunc = Callable[[SwayIPCConnection], Awaitable[None]]
 SubscriptionFunc = Callable[[SwayIPCConnection, JSONDict | JSONList], Awaitable[None]]
-Subscriptions = dict[str, dict[str, SubscriptionFunc]]
-Tasks = list[TaskFunc]
-
-settings_file = "settings.json"
-plugins = "plugins"
 
 
 def copy_file(src_file: str, dest_file: str) -> None:
@@ -40,54 +34,37 @@ def load_function(directory: str, key: str) -> Callable[..., Any]:
         sys.path.pop()
 
 
-def setup_environment() -> str:
+def setup_environment() -> tuple[str, str]:
     """Sets up the necessary directories and returns the path to the settings file."""
     if not (config := os.environ.get("SWAYIPC")):
         config = f"{os.environ['XDG_CONFIG_HOME']}/swayipc"
 
-    for dir in {os.path.join(config, name) for name in ["", plugins]}:
-        os.makedirs(dir, exist_ok=True)
+    os.makedirs((plugins := os.path.join(config, "plugins")), exist_ok=True)
 
-    s_file = os.path.join(config, settings_file)
+    s_file = os.path.join(config, "settings.json")
     if not os.path.exists(s_file):
-        copy_file(os.path.join(os.path.dirname(__file__), settings_file), s_file)
-    return s_file
+        copy_file(os.path.join(os.path.dirname(__file__), "settings.json"), s_file)
+    return s_file, plugins
 
 
-def load_plugins_from_settings(s_file: str) -> tuple[Subscriptions, Tasks, TaskFunc]:
+def load_funcs_from_settings(
+    s_file: str, plugins: str
+) -> dict[str, dict[str, SubscriptionFunc | None]]:
     with open(s_file, "rb") as f:
         settings: dict[str, Any] = orjson.loads(f.read())
 
-    funcs: set[str] = set(
-        value
-        for subdict in settings["subscriptions"].values()
-        for value in subdict.values()
-        if value
-    )
+    func_dict: dict[str, SubscriptionFunc] = {}
+    for changes in settings["subscriptions"].values():
+        for func in changes.values():
+            if func:
+                func_dict[func] = load_function(plugins, func)
 
-    funcs.update(settings["tasks"])
-
-    if (sig_func := settings.get("sigusr_handler")) is not None:
-        funcs.add(sig_func)
-
-    plugin_dir = os.path.join(os.path.dirname(s_file), plugins)
-    f_dict: dict[str, TaskFunc | SubscriptionFunc] = {
-        func: load_function(plugin_dir, func) for func in funcs
+    return {
+        event: {change: func_dict.get(func) for change, func in changes.items()}
+        for event, changes in settings["subscriptions"].items()
     }
 
-    subs: Subscriptions = {
-        event: {change: f_dict.get(func) for change, func in changes.items()}
-        for event, changes in settings["subscriptions"].items()
-        if any(changes.values())
-    }  # pyright: ignore
 
-    tasks: Tasks = [f_dict[task] for task in settings["tasks"]]  # pyright: ignore
-
-    handler: TaskFunc = f_dict[sig_func] if sig_func else (lambda ipc: (yield from ()))
-
-    return subs, tasks, handler
-
-
-def initialize_and_load() -> tuple[Subscriptions, Tasks, TaskFunc]:
-    s_file = setup_environment()
-    return load_plugins_from_settings(s_file)
+def initialize_and_load() -> dict[str, dict[str, SubscriptionFunc | None]]:
+    s_file, plugins = setup_environment()
+    return load_funcs_from_settings(s_file, plugins)

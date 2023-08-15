@@ -163,7 +163,7 @@ class SwayIPCConnection:
                 await socket.send_receive(2, orjson.dumps(events))
             except asyncio.exceptions.CancelledError:
                 await self.close(["subscribe"])
-                return
+                raise asyncio.exceptions.CancelledError
 
     async def close(self, socket_names: list[str] | None = None):
         if socket_names is None:

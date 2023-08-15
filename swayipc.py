@@ -1,38 +1,30 @@
 import asyncio
-from signal import SIGINT, SIGTERM, SIGUSR1
+from signal import SIGINT, SIGTERM
 
-from bootstrap import Subscriptions, initialize_and_load
+from bootstrap import initialize_and_load
 from core import SwayIPCConnection
 
 
-async def event_listener(ipc: SwayIPCConnection, subscriptions: Subscriptions):
-    events = list(subscriptions.keys())
-    async for event, change, payload in ipc.subscribe(events):
-        if (func := subscriptions[event][change]) is not None:
-            await func(ipc, payload)
-
-
-async def main(loop):
-    subscriptions, tasks, sigusr_handler = initialize_and_load()
+async def main():
+    subscriptions = initialize_and_load()
     ipc = SwayIPCConnection()
-
-    for s in [SIGINT, SIGTERM]:
-        loop.add_signal_handler(
-            s, lambda: [task.cancel() for task in asyncio.all_tasks()]
-        )
-    loop.add_signal_handler(SIGUSR1, lambda: asyncio.create_task(sigusr_handler(ipc)))
+    events = [evnt for evnt, changes in subscriptions.items() if any(changes.values())]
 
     try:
-        aiotasks = [t(ipc) for t in tasks]
-        aiotasks.append(event_listener(ipc, subscriptions))
-        await asyncio.gather(*aiotasks)
+        async for event, change, payload in ipc.subscribe(events):
+            if (func := subscriptions[event][change]) is not None:
+                await func(ipc, payload)
     except asyncio.exceptions.CancelledError:
         await ipc.close()
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+
+    loop.add_signal_handler(SIGINT, lambda: [t.cancel() for t in asyncio.all_tasks()])
+    loop.add_signal_handler(SIGTERM, lambda: [t.cancel() for t in asyncio.all_tasks()])
+
     try:
-        loop.run_until_complete(main(loop))
+        loop.run_until_complete(main())
     finally:
         loop.close()

@@ -32,7 +32,7 @@
             "close": null,
             "floating": null,
             "focus": null,
-            "fullscreen_mode": "examples:fullscreen_notify",
+            "fullscreen_mode": null,
             "mark": null,
             "move": null,
             "new": null,
@@ -48,6 +48,5 @@
             "rename": null,
             "urgent": null
         }
-    },
-    "tasks": []
+    }
 }

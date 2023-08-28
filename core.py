@@ -5,6 +5,9 @@ from collections import defaultdict
 from typing import AsyncGenerator
 
 import orjson
+from swaytypes.output import DisabledOutput, EnabledOutput, Output
+from swaytypes.tree.tree import Tree
+from swaytypes.workspace import Workspace
 
 JSONValue = (
     bool
@@ -111,13 +114,13 @@ class SwayIPCConnection:
     async def run_command(self, c: str) -> list[dict[str, bool | str]]:
         return await self.sockets["run_command"].send_receive(0, c.encode())
 
-    async def get_workspaces(self) -> JSONList:
+    async def get_workspaces(self) -> list[Workspace]:
         return await self.sockets["get_workspaces"].send_receive(1)  # pyright:ignore
 
-    async def get_outputs(self) -> JSONList:
+    async def get_outputs(self) -> list[EnabledOutput | DisabledOutput]:
         return await self.sockets["get_outputs"].send_receive(3)  # pyright: ignore
 
-    async def get_tree(self) -> JSONDict:
+    async def get_tree(self) -> Tree:
         return await self.sockets["get_tree"].send_receive(4)  # pyright:ignore
 
     async def get_marks(self):

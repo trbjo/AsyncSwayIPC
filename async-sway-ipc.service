@@ -1,0 +1,13 @@
+[Unit]
+PartOf=sway-session.target
+ConditionEnvironment=SWAYSOCK
+
+[Service]
+Type=exec
+Restart=always
+Environment=PYTHONUNBUFFERED=1
+TimeoutStopSec=2
+ExecStart=/usr/bin/python %h/code/AsyncSwayIPC/async_sway_ipc/run.py
+
+[Install]
+WantedBy=sway-session.target

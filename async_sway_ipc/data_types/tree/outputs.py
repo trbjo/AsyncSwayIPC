@@ -1,7 +1,7 @@
 from typing import Literal, Never, TypedDict
 
-from swaytypes.common import Rectangle
-from swaytypes.tree.workspace import ScratchWorkspace, Workspace
+from data_types.common import Rectangle
+from data_types.tree.workspace import ScratchWorkspace, Workspace
 
 
 class Mode(TypedDict):

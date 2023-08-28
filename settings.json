@@ -32,10 +32,10 @@
             "close": null,
             "floating": null,
             "focus": null,
-            "fullscreen_mode": null,
+            "fullscreen_mode": "examples:fullscreen_notify",
             "mark": null,
             "move": null,
-            "new": null,
+            "new": "examples:print_payload",
             "title": null,
             "urgent": null
         },

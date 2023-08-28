@@ -5,21 +5,9 @@ from collections import defaultdict
 from typing import AsyncGenerator
 
 import orjson
-from swaytypes.output import DisabledOutput, EnabledOutput, Output
-from swaytypes.tree.tree import Tree
-from swaytypes.workspace import Workspace
-
-JSONValue = (
-    bool
-    | str
-    | None
-    | float
-    | dict[str, "JSONInnerValue"]
-    | list[dict[str, "JSONInnerValue"]]
-)
-JSONInnerValue = JSONValue | list[dict[str, JSONValue]]
-JSONDict = dict[str, JSONValue]
-JSONList = list[JSONDict]
+from data_types.output import DisabledOutput, EnabledOutput
+from data_types.tree.tree import Tree
+from data_types.workspace import Workspace
 
 magic_string = "i3-ipc"
 magic_len = len(magic_string)
@@ -75,7 +63,7 @@ class SwayIPCSocket:
         self.writer.write(data)
         await self.writer.drain()
 
-    async def receive(self) -> JSONDict | JSONList:
+    async def receive(self) -> list | dict:
         header = await self.reader.read(header_len)
         payload_length_bytes = header[magic_len : magic_len + payload_len_len]
         payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
@@ -83,17 +71,17 @@ class SwayIPCSocket:
         raw_response = await self.reader.read(payload_length)
         return orjson.loads(raw_response)
 
-    async def receive_event(self) -> tuple[str, JSONDict]:
+    async def receive_event(self) -> tuple[str, dict]:
         header = await self.reader.read(header_len)
+        payload_length_bytes = header[magic_len : magic_len + payload_len_len]
+        payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
+
+        raw_response = await self.reader.read(payload_length)
 
         event_bytes = header[magic_len + payload_len_len : :]
         event_int = int.from_bytes(event_bytes, byteorder=sys.byteorder)
         event_human = _events.get(event_int, "unknown")
 
-        payload_length_bytes = header[magic_len : magic_len + payload_len_len]
-        payload_length = int.from_bytes(payload_length_bytes, sys.byteorder)
-
-        raw_response = await self.reader.read(payload_length)
         return event_human, orjson.loads(raw_response)
 
     async def close(self):
@@ -101,7 +89,7 @@ class SwayIPCSocket:
             self.writer.close()
             await self.writer.wait_closed()
 
-    async def send_receive(self, payload_type: int, command=b"") -> JSONDict | JSONList:
+    async def send_receive(self, payload_type: int, command=b"") -> dict | list:
         async with self.lock:  # ensure only one coroutine is in this block at a time
             await self.send(payload_type, command)
             return await self.receive()
@@ -149,9 +137,9 @@ class SwayIPCConnection:
 
     async def subscribe(
         self, events: list[str]
-    ) -> AsyncGenerator[tuple[str, str, JSONDict], None]:
+    ) -> AsyncGenerator[tuple[str, str, dict], None]:
         if not all(r in _events.values() for r in events):
-            raise ValueError("invalid payload")
+            raise ValueError(f"invalid payload: {events}")
 
         socket = self.sockets["subscribe"]
         if not (await socket.send_receive(2, orjson.dumps(events))).get("success"):

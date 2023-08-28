@@ -1,7 +1,7 @@
 from typing import Never, TypedDict
 
-from swaytypes.common import Rectangle
-from swaytypes.tree.container import Container
+from data_types.common import Rectangle
+from data_types.container import Container
 
 
 class Workspace(TypedDict):

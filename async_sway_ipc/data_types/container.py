@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from typing import Literal, Never, Optional, TypedDict
 
-from swaytypes.common import Rectangle
+from data_types.common import Rectangle
 
 InhibitReason = (
     Literal["focus"]

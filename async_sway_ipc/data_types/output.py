@@ -1,6 +1,6 @@
 from typing import Literal, Never, TypedDict
 
-from swaytypes.common import Rectangle
+from data_types.common import Rectangle
 
 
 class DisabledMode(TypedDict):

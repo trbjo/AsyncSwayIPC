@@ -56,7 +56,7 @@ def load_funcs_from_settings(
     func_dict: dict[str, SubscriptionFunc] = {}
     for changes in settings["subscriptions"].values():
         for func in changes.values():
-            if func:
+            if func and func not in func_dict:
                 func_dict[func] = load_function(plugins, func)
 
     return {

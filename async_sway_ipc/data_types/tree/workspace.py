@@ -28,7 +28,7 @@ class ScratchWorkspace(TypedDict):
     window_rect: Rectangle
 
 
-class Workspace(TypedDict):
+class RealWorkspace(TypedDict):
     border: str
     current_border_width: int
     deco_rect: Rectangle
@@ -53,3 +53,6 @@ class Workspace(TypedDict):
     urgent: bool
     window: None
     window_rect: Rectangle
+
+
+Workspace = RealWorkspace | ScratchWorkspace

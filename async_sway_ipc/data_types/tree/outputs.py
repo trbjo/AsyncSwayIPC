@@ -1,7 +1,7 @@
 from typing import Literal, Never, TypedDict
 
 from data_types.common import Rectangle
-from data_types.tree.workspace import ScratchWorkspace, Workspace
+from data_types.tree.workspace import RealWorkspace, ScratchWorkspace
 
 
 class Mode(TypedDict):
@@ -27,7 +27,7 @@ class RealOutput(TypedDict):
     model: str
     modes: list[Mode]
     name: str
-    nodes: list[Workspace]
+    nodes: list[RealWorkspace]
     orientation: str
     percent: int
     primary: bool

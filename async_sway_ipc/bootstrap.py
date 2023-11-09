@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import sys
+from types import ModuleType
 from typing import Any, Awaitable, Callable
 
 import orjson
@@ -9,24 +10,32 @@ from core import SwayIPCConnection
 SubscriptionFunc = Callable[[SwayIPCConnection, dict | list], Awaitable[None]]
 
 
-def load_function(directory: str, key: str) -> SubscriptionFunc:
-    path, funcname = key.split(":")
-    path = os.path.join(directory, path) if not os.path.isabs(path) else path
-    path += ".py" if not path.endswith(".py") else ""
+def load_functions(subscription_dir: str, events):
+    module_cache = {}
+    func_dict: dict[str, SubscriptionFunc] = {}
+    for changes in events:
+        for func_name in changes.values():
+            if func_name and func_name not in func_dict:
+                path, funcname = func_name.split(":")
+                if not os.path.isabs(path):
+                    path = os.path.join(subscription_dir, path)
+                path += ".py" if not path.endswith(".py") else ""
+                if path not in module_cache:
+                    module_cache[path] = find_module(path)
+                module = module_cache[path]
+                func_dict[func_name] = getattr(module, funcname)
+    return func_dict
 
-    if not os.path.isfile(path):
-        raise FileNotFoundError(
-            f"Can't load function '{funcname}': {path} does not exist"
-        )
 
+def find_module(path: str) -> ModuleType:
     try:
         sys.path.append(os.path.dirname(path))
         spec = importlib.util.spec_from_file_location("module.name", path)
         if spec and spec.loader:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            return getattr(module, funcname)
-        raise ImportError(f"Failed to load {funcname} from {path}")
+            return module
+        raise ImportError(f"Failed to load from {path}")
     finally:
         sys.path.pop()
 
@@ -34,8 +43,7 @@ def load_function(directory: str, key: str) -> SubscriptionFunc:
 def ensure_default_dirs_exist(destination: str) -> None:
     dest_dir = os.path.dirname(destination)
     subscription_dir = os.path.join(dest_dir, "subscription_handlers")
-    if not os.path.exists(subscription_dir):
-        os.makedirs(subscription_dir, exist_ok=True)
+    os.makedirs(subscription_dir, exist_ok=True)
 
     if not os.path.exists(destination):
         ipc_dir = os.path.dirname(__file__)
@@ -53,11 +61,9 @@ def load_funcs_from_settings(
         os.path.dirname(settings_path), "subscription_handlers"
     )
 
-    func_dict: dict[str, SubscriptionFunc] = {}
-    for changes in settings["subscriptions"].values():
-        for func_name in changes.values():
-            if func_name and func_name not in func_dict:
-                func_dict[func_name] = load_function(subscription_dir, func_name)
+    func_dict: dict[str, SubscriptionFunc] = load_functions(
+        subscription_dir, settings["subscriptions"].values()
+    )
 
     return {
         event: {change: func_dict.get(func) for change, func in changes.items()}

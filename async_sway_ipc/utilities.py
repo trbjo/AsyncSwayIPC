@@ -14,7 +14,12 @@ async def rec_parse_tree(node: dict | list, func: Callable) -> list:
 
 
 async def app_finder(n: dict) -> ApplicationContainer | None:
-    if (n.get("pid")) is not None:
+    if n.get("pid") is not None:
+        return n
+
+
+async def focused_app(n: dict) -> ApplicationContainer | None:
+    if n.get("pid") is not None and n.get("focused") is True:
         return n
 
 
